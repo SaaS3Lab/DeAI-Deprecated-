@@ -2,9 +2,15 @@ package core
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
 
+	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
 )
+package core
 
 type NodeID string
 
@@ -62,4 +68,74 @@ func (n *DeAINode) SubscribeFromNetwork(ctx context.Context, strmID DeAIID) (*st
 //UnsubscribeFromNetwork unsubscribes to a data stream on the network.
 func (n *DeAINode) UnsubscribeFromNetwork(strmID DeAIID) error {
 	
+}
+
+var ErrNotFound = errors.New("NotFound")
+
+const HLSWaitTime = time.Second * 10
+
+type StreamDB struct {
+	streams    map[StreamID]stream.VideoStream_
+	SelfNodeID string
+}
+
+func NewStreamDB(selfNodeID string) *StreamDB {
+	return &StreamDB{
+		streams:    make(map[StreamID]stream.VideoStream_),
+		SelfNodeID: selfNodeID}
+}
+
+func (s *StreamDB) GetHLSStream(id StreamID) stream.HLSVideoStream {
+	strm, ok := s.streams[id]
+	if !ok {
+		return nil
+	}
+	if strm.GetStreamFormat() != stream.HLS {
+		return nil
+	}
+	return strm.(stream.HLSVideoStream)
+}
+
+func (s *StreamDB) AddNewHLSStream(strmID StreamID) (strm stream.HLSVideoStream, err error) {
+	strm = stream.NewBasicHLSVideoStream(strmID.String(), stream.DefaultSegWaitTime)
+	s.streams[strmID] = strm
+
+	// glog.Infof("Adding new video stream with ID: %v", strmID)
+	return strm, nil
+}
+
+
+func (s *StreamDB) AddStream(strmID StreamID, strm stream.VideoStream_) (err error) {
+	s.streams[strmID] = strm
+	return nil
+}
+
+func (s *StreamDB) DeleteStream(strmID StreamID) {
+	strm, ok := s.streams[strmID]
+	if !ok {
+		return
+	}
+
+	if strm.GetStreamFormat() == stream.HLS {
+		//Remove all the variant lookups too
+		hlsStrm := strm.(stream.HLSVideoStream)
+		mpl, err := hlsStrm.GetMasterPlaylist()
+		if err != nil {
+			glog.Errorf("Error getting master playlist: %v", err)
+		}
+		for _, v := range mpl.Variants {
+			vName := strings.Split(v.URI, ".")[0]
+			delete(s.streams, StreamID(vName))
+		}
+	}
+	delete(s.streams, strmID)
+}
+
+func (s StreamDB) String() string {
+	streams := ""
+	for vid, s := range s.streams {
+		streams = streams + fmt.Sprintf("\nVariantID:%v, %v", vid, s)
+	}
+
+	return fmt.Sprintf("\nStreams:%v\n\n", streams)
 }
