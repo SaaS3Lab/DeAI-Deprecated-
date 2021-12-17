@@ -112,7 +112,7 @@ func (s *StubSubscriber) IsWorking() bool { return true }
 func (s *StubSubscriber) String() string  { return "" }
 func (s *StubSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint64, data []byte, eof bool)) error {
 	d, _ := ioutil.ReadFile("./test.ts")
-	newSeg := SignedSegment{Seg: stream.HLSSegment{SeqNo: 100, Name: "test name", Data: d, Duration: 1}, Sig: []byte("test sig")}
+	newSeg := SignedSegment{Seg: requestHLSSegment{SeqNo: 100, Name: "test name", Data: d, Duration: 1}, Sig: []byte("test sig")}
 	b, err := SignedSegmentToBytes(newSeg)
 	if err != nil {
 		s.T.Errorf("Error Converting SignedSegment to Bytes: %v", err)

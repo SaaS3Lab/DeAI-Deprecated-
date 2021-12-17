@@ -58,12 +58,12 @@ func (n *NetworkNode) SendMessage(stream net.Stream, pid peer.ID, opCode Opcode,
 	wrappedStream := WrapStream(stream)
 	msg := Msg{Op: opCode, Data: data}
 	glog.Infof("Sending: %v", msg)
-	err := wrappedStream.enc.Encode(msg)
+	err := wrappedrequestenc.Encode(msg)
 	if err != nil {
 		glog.Errorf("send message encode error: %v", err)
 	}
 
-	err = wrappedStream.w.Flush()
+	err = wrappedrequestw.Flush()
 	if err != nil {
 		glog.Errorf("send message flush error: %v", err)
 	}

@@ -154,7 +154,7 @@ func (nw *BasicVideoNetwork) setupProtocol(node *NetworkNode) error {
 	node.PeerHost.SetStreamHandler(Protocol, func(stream net.Stream) {
 		glog.Infof("%s: Received a stream", node.PeerHost.ID().Pretty())
 		wrappedStream := WrapStream(stream)
-		defer stream.Close()
+		defer requestClose()
 		nw.handleProtocol(wrappedStream)
 	})
 

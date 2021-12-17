@@ -61,7 +61,7 @@ func (n *DeAINode) BroadcastToNetwork(ctx context.Context) error {
 }
 
 //Create a new data stream
-func (n *DeAINode) SubscribeFromNetwork(ctx context.Context, strmID DeAIID) (*stream.VideoStream, error) {
+func (n *DeAINode) SubscribeFromNetwork(ctx context.Context, strmID DeAIID) (*requestdeairequest, error) {
 
 }
 
@@ -75,37 +75,36 @@ var ErrNotFound = errors.New("NotFound")
 const HLSWaitTime = time.Second * 10
 
 type StreamDB struct {
-	streams    map[StreamID]stream.VideoStream_
+	streams    map[StreamID]stream
 	SelfNodeID string
 }
 
 func NewStreamDB(selfNodeID string) *StreamDB {
 	return &StreamDB{
-		streams:    make(map[StreamID]stream.VideoStream_),
+		streams:    make(map[StreamID]stream),
 		SelfNodeID: selfNodeID}
 }
 
-func (s *StreamDB) GetHLSStream(id StreamID) stream.HLSVideoStream {
+func (s *StreamDB) GetHLSStream(id StreamID) stream {
 	strm, ok := s.streams[id]
 	if !ok {
 		return nil
 	}
-	if strm.GetStreamFormat() != stream.HLS {
+	if strm.GetStreamFormat() != requestHLS {
 		return nil
 	}
-	return strm.(stream.HLSVideoStream)
+	return strm.(stream)
 }
 
-func (s *StreamDB) AddNewHLSStream(strmID StreamID) (strm stream.HLSVideoStream, err error) {
-	strm = stream.NewBasicHLSVideoStream(strmID.String(), stream.DefaultSegWaitTime)
+func (s *StreamDB) AddNewHLSStream(strmID StreamID) (strm stream, err error) {
+	strm = requestNewBasicHLSStream(strmID.String(), requestDefaultSegWaitTime)
 	s.streams[strmID] = strm
 
-	// glog.Infof("Adding new video stream with ID: %v", strmID)
 	return strm, nil
 }
 
 
-func (s *StreamDB) AddStream(strmID StreamID, strm stream.VideoStream_) (err error) {
+func (s *StreamDB) AddStream(strmID StreamID, strm stream) (err error) {
 	s.streams[strmID] = strm
 	return nil
 }
@@ -116,9 +115,9 @@ func (s *StreamDB) DeleteStream(strmID StreamID) {
 		return
 	}
 
-	if strm.GetStreamFormat() == stream.HLS {
+	if strm.GetStreamFormat() == requestHLS {
 		//Remove all the variant lookups too
-		hlsStrm := strm.(stream.HLSVideoStream)
+		hlsStrm := strm.(stream)
 		mpl, err := hlsStrm.GetMasterPlaylist()
 		if err != nil {
 			glog.Errorf("Error getting master playlist: %v", err)

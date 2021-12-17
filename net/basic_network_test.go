@@ -13,7 +13,7 @@ import (
 )
 
 func TestSendingStream(t *testing.T) {
-	glog.Infof("\n\nTesting Sending Stream...")
+	glog.Infof("\n\nTesting Sending request..")
 	priv1, pub1, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	n1, _ := NewBasicNetwork(15000, priv1, pub1)
 
