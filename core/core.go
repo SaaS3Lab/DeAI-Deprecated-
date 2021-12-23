@@ -1,140 +1,91 @@
 package core
 
 import (
-	"context"
 	"errors"
-	"fmt"
-	"strings"
+	"math/big"
+	"math/rand"
+	"net/url"
+	"sync"
 	"time"
-
-	"github.com/ericxtang/m3u8"
-	"github.com/golang/glog"
 )
-package core
 
-type NodeID string
+var MaxSessions = 10
 
+type NodeType int
+
+const (
+	DefaultNode NodeType = iota
+	BroadcasterNode
+)
+
+var nodeTypeStrs = map[NodeType]string{
+	DefaultNode:      "default",
+	BroadcasterNode:  "broadcaster",
+}
+
+func (t NodeType) String() string {
+	str, ok := nodeTypeStrs[t]
+	if !ok {
+		return "unknown"
+	}
+	return str
+}
+
+//DeAINode handles videos going in and coming out of the DeAI network.
 type DeAINode struct {
-	Identity     NodeID
-	VideoNetwork net.VideoNetwork
-	StreamDB     *StreamDB
-	Eth          eth.Client
-	IsTranscoder bool
+
+	// Common fields
+	Eth      eth.DeAIEthClient
+	WorkDir  string
+	NodeType NodeType
+	Database *common.DB
+
+	// Broadcaster public fields
+	Sender pm.Sender
+
+	// Thread safety for config fields
+	mu sync.RWMutex
+	// Transcoder private fields
+	priceInfo    *big.Rat
+	serviceURI   url.URL
+	segmentMutex *sync.RWMutex
 }
 
-func (n *DeAINode) Start() {
-	//Connect to bootstrap node, ask for more peers
-
-	//Connect to peers
-
-	//Kick off process to periodically monitor peer connection by pinging them
+//NewDeAINode creates a new DeAI Node. Eth can be nil.
+func NewDeAINode(e eth.DeAIEthClient, wd string, dbh *common.DB) (*DeAINode, error) {
+	rand.Seed(time.Now().UnixNano())
+	return &DeAINode{
+		Eth:             e,
+		WorkDir:         wd,
+		Database:        dbh,
+		AutoAdjustPrice: true,
+		SegmentChans:    make(map[ManifestID]SegmentChan),
+		segmentMutex:    &sync.RWMutex{},
+	}, nil
 }
 
-func (n *DeAINode) monitorEth() {
-
+func (n *DeAINode) GetServiceURI() *url.URL {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return &n.serviceURI
 }
 
-
-func (n *DeAINode) BroadcastToNetwork(ctx context.Context) error {
-	b := n.VideoNetwork.NewBroadcaster(strm.GetDeAIID())
-
-	//Prepare the broadcast.  May have to send the MasterPlaylist as part of the handshake.
-
-	//Kick off a go routine to broadcast the stream
-	go func() {
-		for {
-			seg, err := strm.ReadHLSSegment()
-			if err != nil {
-				glog.Errorf("Error reading hls stream while broadcasting to network: %v", err)
-				return //TODO: Should better handle error here
-			}
-
-			//Encode seg into []byte, then send it via b.Broadcast
-		}
-	}()
-
-	select {
-	case <-ctx.Done():
-		glog.Errorf("Done Broadcasting")
-		return nil
-	}
+func (n *DeAINode) SetServiceURI(newUrl *url.URL) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.serviceURI = *newUrl
 }
 
-//Create a new data stream
-func (n *DeAINode) SubscribeFromNetwork(ctx context.Context, strmID DeAIID) (*requestdeairequest, error) {
-
+// SetBasePrice sets the base price for an orchestrator on the node
+func (n *DeAINode) SetBasePrice(price *big.Rat) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.priceInfo = price
 }
 
-//UnsubscribeFromNetwork unsubscribes to a data stream on the network.
-func (n *DeAINode) UnsubscribeFromNetwork(strmID DeAIID) error {
-	
-}
-
-var ErrNotFound = errors.New("NotFound")
-
-const HLSWaitTime = time.Second * 10
-
-type StreamDB struct {
-	streams    map[StreamID]stream
-	SelfNodeID string
-}
-
-func NewStreamDB(selfNodeID string) *StreamDB {
-	return &StreamDB{
-		streams:    make(map[StreamID]stream),
-		SelfNodeID: selfNodeID}
-}
-
-func (s *StreamDB) GetHLSStream(id StreamID) stream {
-	strm, ok := s.streams[id]
-	if !ok {
-		return nil
-	}
-	if strm.GetStreamFormat() != requestHLS {
-		return nil
-	}
-	return strm.(stream)
-}
-
-func (s *StreamDB) AddNewHLSStream(strmID StreamID) (strm stream, err error) {
-	strm = requestNewBasicHLSStream(strmID.String(), requestDefaultSegWaitTime)
-	s.streams[strmID] = strm
-
-	return strm, nil
-}
-
-
-func (s *StreamDB) AddStream(strmID StreamID, strm stream) (err error) {
-	s.streams[strmID] = strm
-	return nil
-}
-
-func (s *StreamDB) DeleteStream(strmID StreamID) {
-	strm, ok := s.streams[strmID]
-	if !ok {
-		return
-	}
-
-	if strm.GetStreamFormat() == requestHLS {
-		//Remove all the variant lookups too
-		hlsStrm := strm.(stream)
-		mpl, err := hlsStrm.GetMasterPlaylist()
-		if err != nil {
-			glog.Errorf("Error getting master playlist: %v", err)
-		}
-		for _, v := range mpl.Variants {
-			vName := strings.Split(v.URI, ".")[0]
-			delete(s.streams, StreamID(vName))
-		}
-	}
-	delete(s.streams, strmID)
-}
-
-func (s StreamDB) String() string {
-	streams := ""
-	for vid, s := range s.streams {
-		streams = streams + fmt.Sprintf("\nVariantID:%v, %v", vid, s)
-	}
-
-	return fmt.Sprintf("\nStreams:%v\n\n", streams)
+// GetBasePrice gets the base price for an orchestrator
+func (n *DeAINode) GetBasePrice() *big.Rat {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.priceInfo
 }
