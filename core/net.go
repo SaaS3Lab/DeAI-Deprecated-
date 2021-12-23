@@ -18,72 +18,58 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 )
 
-var Protocol = protocol.ID("/livepeer_video/0.0.1")
-
-// type VideoMsg struct {
-// 	SeqNo uint64
-// 	Data  []byte
-// }
-
-//BasicVideoNetwork creates a kademlia network using libp2p.  It does push-based video delivery, and handles the protocol in the background.
-type BasicVideoNetwork struct {
-	NetworkNode  *NetworkNode
-	broadcasters map[string]*BasicBroadcaster
-	subscribers  map[string]*BasicSubscriber
-}
-
-//BasicBroadcaster keeps track of a list of listeners and a queue of video chunks.  It doesn't start keeping track of things until there is at least 1 listner.
+//BasicBroadcaster keeps track of a list of listeners and a queue of DeAI chunks.  It doesn't start keeping track of things until there is at least 1 listner.
 type BasicBroadcaster struct {
 	host      host.Host
 	q         *list.List
 	lock      *sync.Mutex
 	listeners map[string]peerstore.PeerInfo
-	StrmID    string
+	DeAIID    string
 }
 
 type BasicSubscriber struct {
-	Network *BasicVideoNetwork
+	Network *BasicDeAINetwork
 	host    host.Host
-	StrmID  string
+	DeAIID  string
 }
 
-//NewBasicNetwork creates a libp2p node, handle the basic (push-based) video protocol.
-func NewBasicNetwork(port int, priv crypto.PrivKey, pub crypto.PubKey) (*BasicVideoNetwork, error) {
+//NewBasicNetwork creates a libp2p node, handle the basic (push-based) DeAI protocol.
+func NewBasicNetwork(port int, priv crypto.PrivKey, pub crypto.PubKey) (*BasicDeAINetwork, error) {
 	n, err := NewNode(port, priv, pub)
 	if err != nil {
 		glog.Errorf("Error creating a new node: %v", err)
 		return nil, err
 	}
 
-	nw := &BasicVideoNetwork{NetworkNode: n, broadcasters: make(map[string]*BasicBroadcaster), subscribers: make(map[string]*BasicSubscriber)}
+	nw := &BasicDeAINetwork{NetworkNode: n, broadcasters: make(map[string]*BasicBroadcaster), subscribers: make(map[string]*BasicSubscriber)}
 	if err = nw.setupProtocol(n); err != nil {
-		glog.Errorf("Error setting up video protocol: %v", err)
+		glog.Errorf("Error setting up DeAI protocol: %v", err)
 		return nil, err
 	}
 
 	return nw, nil
 }
 
-func (n *BasicVideoNetwork) NewBroadcaster(strmID string) *BasicBroadcaster {
-	b := &BasicBroadcaster{StrmID: strmID, q: list.New(), host: n.NetworkNode.PeerHost, lock: &sync.Mutex{}, listeners: make(map[string]peerstore.PeerInfo)}
-	n.broadcasters[strmID] = b
+func (n *BasicDeAINetwork) NewBroadcaster(DeAIID string) *BasicBroadcaster {
+	b := &BasicBroadcaster{DeAIID: DeAIID, q: list.New(), host: n.NetworkNode.PeerHost, lock: &sync.Mutex{}, listeners: make(map[string]peerstore.PeerInfo)}
+	n.broadcasters[DeAIID] = b
 	return b
 }
 
-func (n *BasicVideoNetwork) NewSubscriber(strmID string) *BasicSubscriber {
-	s := &BasicSubscriber{StrmID: strmID, host: n.NetworkNode.PeerHost}
-	n.subscribers[strmID] = s
+func (n *BasicDeAINetwork) NewSubscriber(DeAIID string) *BasicSubscriber {
+	s := &BasicSubscriber{DeAIID: DeAIID, host: n.NetworkNode.PeerHost}
+	n.subscribers[DeAIID] = s
 	return s
 }
 
-//Broadcast sends a video chunk to the stream
+//Broadcast sends a DeAI chunk to the dataBlock
 func (b *BasicBroadcaster) Broadcast(seqNo uint64, data []byte) error {
-	b.q.PushBack(&StreamDataMsg{SeqNo: seqNo, Data: data})
-	// b.q = append(b.q, &VideoMsg{SeqNo: seqNo, Data: data})
+	b.q.PushBack(&dataBlockDataMsg{SeqNo: seqNo, Data: data})
+	// b.q = append(b.q, &DeAIMsg{SeqNo: seqNo, Data: data})
 	return nil
 }
 
-//Finish signals the stream is finished
+//Finish signals the dataBlock is finished
 func (b *BasicBroadcaster) Finish() error {
 	return nil
 }
@@ -103,9 +89,9 @@ func (b *BasicBroadcaster) broadcastToNetwork(ctx context.Context, n *NetworkNod
 				continue
 			}
 
-			msg, ok := e.Value.(*StreamDataMsg)
+			msg, ok := e.Value.(*dataBlockDataMsg)
 			if !ok {
-				glog.Errorf("Cannot convert video msg during broadcast: %v", e.Value)
+				glog.Errorf("Cannot convert DeAI msg during broadcast: %v", e.Value)
 				continue
 			}
 
@@ -122,12 +108,12 @@ func (b *BasicBroadcaster) broadcastToNetwork(ctx context.Context, n *NetworkNod
 					// }
 				}
 
-				s, err := n.PeerHost.NewStream(context.Background(), p.ID, Protocol)
+				s, err := n.PeerHost.NewdataBlock(context.Background(), p.ID, Protocol)
 				if err != nil {
 					log.Fatal(err)
 				}
 
-				n.SendMessage(s, p.ID, StreamDataID, StreamDataMsg{SeqNo: 0, StrmID: b.StrmID, Data: msg.Data})
+				n.SendMessage(s, p.ID, dataBlockDataID, dataBlockDataMsg{SeqNo: 0, DeAIID: b.DeAIID, Data: msg.Data})
 			}
 		}
 	}()
@@ -137,7 +123,7 @@ func (b *BasicBroadcaster) broadcastToNetwork(ctx context.Context, n *NetworkNod
 	}
 }
 
-//Subscribe kicks off a go routine that calls the gotData func for every new video chunk
+//Subscribe kicks off a go routine that calls the gotData func for every new DeAI chunk
 func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint64, data []byte)) error {
 	//Send Subscribe Request
 	for {
@@ -150,18 +136,18 @@ func (s *BasicSubscriber) Unsubscribe() error {
 	return nil
 }
 
-func (nw *BasicVideoNetwork) setupProtocol(node *NetworkNode) error {
-	node.PeerHost.SetStreamHandler(Protocol, func(stream net.Stream) {
-		glog.Infof("%s: Received a stream", node.PeerHost.ID().Pretty())
-		wrappedStream := WrapStream(stream)
+func (nw *BasicDeAINetwork) setupProtocol(node *NetworkNode) error {
+	node.PeerHost.SetdataBlockHandler(Protocol, func(dataBlock net.dataBlock) {
+		glog.Infof("%s: Received a dataBlock", node.PeerHost.ID().Pretty())
+		wrappeddataBlock := WrapdataBlock(dataBlock)
 		defer requestClose()
-		nw.handleProtocol(wrappedStream)
+		nw.handleProtocol(wrappeddataBlock)
 	})
 
 	return nil
 }
 
-func (nw *BasicVideoNetwork) handleProtocol(ws *WrappedStream) {
+func (nw *BasicDeAINetwork) handleProtocol(ws *WrappeddataBlock) {
 	var msg Msg
 	err := ws.dec.Decode(&msg)
 
@@ -170,15 +156,6 @@ func (nw *BasicVideoNetwork) handleProtocol(ws *WrappedStream) {
 		return
 	}
 
-	//Video Protocol:
-	//	- StreamData
-	//	- FinishStream
-	//	- SubReq
-	//	- CancelSub
-
-	//Livepeer Protocol:
-	//	- TranscodeInfo
-	//	- TranscodeInfoAck (TranscodeInfo will re-send until getting an Ack)
 	switch msg.Op {
 	case SubReqID:
 		sr, ok := msg.Data.(SubReqMsg)
@@ -187,23 +164,23 @@ func (nw *BasicVideoNetwork) handleProtocol(ws *WrappedStream) {
 		}
 		glog.Infof("Got Sub Req: %v", sr)
 		nw.handleSubReq(sr)
-	case StreamDataID:
-		glog.Infof("Got Stream Data: %v", msg.Data)
+	case dataBlockDataID:
+		glog.Infof("Got dataBlock Data: %v", msg.Data)
 		//Enque it into the subscriber
 	default:
 		glog.Infof("Data: %v", msg)
 	}
 }
 
-func (nw *BasicVideoNetwork) handleSubReq(subReq SubReqMsg) {
-	b := nw.broadcasters[subReq.StrmID]
+func (nw *BasicDeAINetwork) handleSubReq(subReq SubReqMsg) {
+	b := nw.broadcasters[subReq.DeAIID]
 	if b == nil {
-		glog.Infof("Cannot find broadcast for stream: %v", subReq.StrmID)
+		glog.Infof("Cannot find broadcast for dataBlock: %v", subReq.DeAIID)
 		return
 	}
 
 	//If not in peerstore, add it.
-	p := b.listeners[subReq.StrmID]
+	p := b.listeners[subReq.DeAIID]
 	if p.ID == "" {
 		addr, err := ma.NewMultiaddr(subReq.SubNodeAddr)
 		if err != nil {
@@ -214,7 +191,7 @@ func (nw *BasicVideoNetwork) handleSubReq(subReq SubReqMsg) {
 			glog.Errorf("Bad peer id in subReq: %v", subReq)
 		}
 		p = peerstore.PeerInfo{ID: id, Addrs: []ma.Multiaddr{addr}}
-		b.listeners[subReq.StrmID] = p
+		b.listeners[subReq.DeAIID] = p
 	}
 
 	b.broadcastToNetwork(context.Background(), nw.NetworkNode)

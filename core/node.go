@@ -15,7 +15,6 @@ type NetworkNode struct {
 	PeerHost  host.Host           // the network host (server+client)
 }
 
-//NewNode creates a new Livepeerd node.
 func NewNode(listenPort int, priv crypto.PrivKey, pub crypto.PubKey) (*NetworkNode, error) {
 	pid, err := peer.IDFromPublicKey(pub)
 	if err != nil {
